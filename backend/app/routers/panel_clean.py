@@ -1,4 +1,4 @@
-"""组件清洗接口：维护清洗任务，覆盖安排清洗、开始清洗、确认完成等动作。"""
+"""组件清洗接口：维护清洗任务，覆盖安排清洗、提交验收、验收通过、取消任务与恢复清洗。"""
 from __future__ import annotations
 
 from typing import Any
@@ -13,13 +13,13 @@ router = APIRouter(prefix="/api/panel_clean", tags=["组件清洗"])
 service = PanelCleanService()
 
 LIST_FIELDS = ["清洗编号", "清洗区域", "组件数量", "清洗方式", "清洗日期", "清洗班组", "清洗效果", "清洗状态"]
-STATUSES = ["待清洗", "清洗中", "已完成", "已取消"]
+STATUSES = ["待安排", "清洗中", "待验收", "已完成", "已取消"]
 
 
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按清洗编号检索"),
-    status: str | None = Query(default=None, description="待清洗、清洗中、已完成、已取消"),
+    status: str | None = Query(default=None, description="待安排、清洗中、待验收、已完成、已取消"),
     page: int = 1,
     size: int = 20,
 ) -> PageResult[dict]:
@@ -50,7 +50,7 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条清洗任务执行安排清洗、开始清洗、确认完成；不允许的动作会被拦下并说明原因。"""
+    """对单条清洗任务执行安排清洗、提交验收、验收通过、取消任务、恢复清洗；不允许的动作会被拦下并说明原因。"""
     action = str(payload.values.get("action") or "").strip()
     entry, message = service.run_action(entry_id, action)
     if entry is None:

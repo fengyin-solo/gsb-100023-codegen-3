@@ -3,7 +3,7 @@
     <header class="page-head">
       <div>
         <h2>组件清洗管理</h2>
-        <p class="page-desc">维护清洗任务，围绕清洗编号、清洗区域、组件数量、清洗方式做登记、筛选与状态流转。</p>
+        <p class="page-desc">维护清洗任务，按待安排、清洗中、待验收、已完成逐级流转，取消后可恢复到清洗中。</p>
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记清洗任务</button>
@@ -39,7 +39,7 @@
           <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
           <td class="row-actions">
             <button
-              v-for="action in actions"
+              v-for="action in rowActions(row)"
               :key="action"
               class="link"
               type="button"
@@ -47,6 +47,7 @@
             >
               {{ action }}
             </button>
+            <span v-if="!rowActions(row).length">—</span>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -63,23 +64,35 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
 
-type Row = Record<string, string | number | null>
+type Row = Record<string, string | number | string[] | null | undefined>
 
 const ENDPOINT = '/api/panel_clean'
 const columns = ["清洗编号", "清洗区域", "组件数量", "清洗方式", "清洗日期", "清洗班组", "清洗效果", "清洗状态"]
-const actions = ["安排清洗", "开始清洗", "确认完成"]
-const statuses = ["待清洗", "清洗中", "已完成", "已取消"]
-const stats = [{"label": "待清洗区域", "value": 0}, {"label": "清洗中区域", "value": 0}, {"label": "本月清洗量", "value": 0}]
+// 环节顺序：待安排 → 清洗中 → 待验收 → 已完成；已取消只能由待安排、清洗中进入
+const statuses = ["待安排", "清洗中", "待验收", "已完成", "已取消"]
 
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+
+const stats = computed(() =>
+  statuses.slice(0, 3).map((status) => ({
+    label: `${status}任务`,
+    value: rows.value.filter((row) => row.status === status).length,
+  })),
+)
+
+// 可执行动作完全以后端下发的为准：前一步确认后才出现下一步，已取消只剩恢复清洗
+function rowActions(row: Row): string[] {
+  const actions = row.available_actions
+  return Array.isArray(actions) ? actions : []
+}
 
 function resetFilters() {
   filters.value = {}
@@ -99,10 +112,11 @@ async function runAction(action: string, row: Row) {
   try {
     const response = await request(`${ENDPOINT}/${row.id}/actions`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ values: { action } }),
     })
-    if (!response.ok) {
-      throw new Error('组件清洗动作未生效，请稍后重试')
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.message ?? '组件清洗动作未生效，请稍后重试')
     }
     await reload()
   } catch (error) {
